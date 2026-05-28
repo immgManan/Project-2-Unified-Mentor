@@ -64,7 +64,7 @@ df["Age_tenure_interaction"] = (
 # Features and Target
 x = df.drop(["Risk Level","Exited"], axis=1)
 
-y = df["Risk Level"]
+y = df["Exited"]
 
 # Encoding
 x = pd.get_dummies(x, drop_first=True)
@@ -103,7 +103,7 @@ with col2:
     geography = st.selectbox("Geography", ["France", "Spain", "Germany"])
     gender = st.selectbox("Gender", ["Male","Female"])
     tenure = st.slider("Tenure", 0, 10, 5)
-    num_of_products = st.slider("Number of Products", 1, 4, 1)
+    num_of_products = st.slider("Number of Products", 0, 4, 1)
     has_cr_card = st.selectbox("Has Credit Card?", [0, 1])
     is_active_member = st.selectbox("Is Active Member", [0, 1])
 
@@ -117,6 +117,7 @@ geo_germany = 1 if geography == "Germany" else 0
 if st.button("Predict Churn Risk"):
     
     input_data = pd.DataFrame({
+     'Year': [2025],
      'CreditScore': [credit_score],
         'Age': [age],
         'Tenure': [tenure],
@@ -146,68 +147,31 @@ if st.button("Predict Churn Risk"):
 
     
     st.write(input_data.T)
-
-    probability = model4.predict_proba(input_data)[0]
-
+    # Prediction
     prediction = model4.predict(input_data)[0]
 
+    # Probability
+    probability = model4.predict_proba(input_data)[0]
 
-    class_names = model4.classes_
-    probability_df = pd.DataFrame([{
-    class_names[i]: round(probability[i] * 100, 2)
-    for i in range(len(class_names))}])
-
-    # Churn Probability
-    predicted_index = list(class_names).index(prediction)
-
-    # KPI Metrics
-    prob_dict = {
-    class_names[i]: round(probability[i] * 100, 2)
-    for i in range(len(class_names))}
+    retention_probability = round(probability[0]*100, 2)
+    churn_probability = round(probability[1]*100, 2)    
 
     # Results
-    predicted_probability = round(
-    prob_dict[prediction],
-    2)
+  
 
     st.subheader("Prediction Result")
-
-    if prediction == "High Risk":
-      st.error(
-      f"⚠️ High Churn Risk ({predicted_probability}%)" )
-
-    elif prediction == "Medium Risk":
-      st.warning(
-       f"⚠️ Medium Churn Risk ({predicted_probability}%)")
-
+    if prediction == 1:
+       st.error(f"⚠️ Customer Likely to Churn ({churn_probability}%)")
     else:
-      st.success(
-       f"✅ Low Churn Risk ({predicted_probability}%)")
+       st.success(f"✅ Customer Likely to Stay ({retention_probability}%)")   
 
     st.subheader("Risk Probabilities")
 
-    
-
     # KPI Metrics
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
-      st.metric(
-        "Low Risk %",
-        f"{prob_dict.get('Low Risk', 0)}%")
+      st.metric("Retention Probability", f"{retention_probability}")
 
     with col2:
-     st.metric(
-        "Medium Risk %",
-        f"{prob_dict.get('Medium Risk', 0)}%")
-
-    with col3:
-     st.metric(
-        "High Risk %",
-        f"{prob_dict.get('High Risk', 0)}%")
-     
-    predicted_probability = round(
-    prob_dict[prediction],2)
-
-   
-   
+     st.metric("Churn Probability", f"{churn_probability}")

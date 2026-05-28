@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
 import streamlit as st
@@ -11,15 +12,15 @@ def risk_label(row):
     score = 0
 
     # Age
-    if row["Age"] > 50:
-        score += 2
+    if row["Age"] > 60:
+        score += 1
 
     # Balance
-    if row["Balance"] > 100000:
-        score += 2
+    if row["Balance"] > 150000:
+        score += 1
 
     # Credit Score
-    if row["CreditScore"] < 500:
+    if row["CreditScore"] < 450:
         score += 2
 
     # Activity
@@ -27,15 +28,15 @@ def risk_label(row):
         score += 1
 
     # Products
-    if row["NumOfProducts"] <= 1:
+    if row["NumOfProducts"] == 1:
         score += 1
 
     # Exited
     if row["Exited"] == 1:
-        score += 3
+        score += 2
 
     # Final Risk Level
-    if score >= 7:
+    if score >= 6:
         return "High Risk"
 
     elif score >= 4:
@@ -85,25 +86,20 @@ st.write("Model Accuracy:", accuracy)
 pickle.dump(model4, open("churn_model_Grad_Boost.pkl", "wb"))
 model4 = pickle.load(open("churn_model_Grad_Boost.pkl", "rb"))
 
-# Page Configuration
-st.set_page_config(page_title = "Customer Churn Risk Calculator", page_icon = "📉",
-                    layout = "wide")
-st.title("Customer Churn Risk Calculator")
+# Input Customer Features
+st.subheader("Input Customer Features")
 
-# Input Section
 col1, col2 = st.columns(2)
-
 with col1:
     credit_score = st.slider("Credit Score", 300,900,650)
     age = st.slider("Age", 18,100,35)
-    balance = st.number_input("Balance", min_value = 0.0, value = 50000.0)
-    estimated_salary = st.number_input("Estimated Salary", min_value = 0.0, value = 50000.0)
-
+    balance = st.number_input("Balance", min_value =0, value = 50000)
+    estimated_salary = st.number_input("Estimated Salary", min_value = 0, value = 50000)
 with col2:
     geography = st.selectbox("Geography", ["France", "Spain", "Germany"])
     gender = st.selectbox("Gender", ["Male","Female"])
     tenure = st.slider("Tenure", 0, 10, 5)
-    num_of_products = st.slider("Number of Products", 1, 4, 1)
+    num_of_products = st.slider("Number of Products", 0, 4, 1)
     has_cr_card = st.selectbox("Has Credit Card?", [0, 1])
     is_active_member = st.selectbox("Is Active Member", [0, 1])
 
@@ -113,9 +109,8 @@ gender = 1 if gender == "Male" else 0
 geo_spain = 1 if geography == "Spain" else 0
 geo_germany = 1 if geography == "Germany" else 0
 
-# Prediction Button
-if st.button("Predict Churn Risk"):
-    
+# Predict Button
+if st.button("Visualize Churn Probability"):
     input_data = pd.DataFrame({
      'CreditScore': [credit_score],
         'Age': [age],
@@ -129,85 +124,57 @@ if st.button("Predict Churn Risk"):
         'Geography_Germany': [geo_germany],
         'Geography_Spain': [geo_spain],
         'Balance_to_Salary_ratio': [balance / estimated_salary if estimated_salary > 0 else 0],
-        'Product_Density_Indicator': [num_of_products / age if age > 0 else num_of_products],
-        'Engagement_product_indicator': [num_of_products*2 + is_active_member + has_cr_card],
         'Age_tenure_interaction': [age * tenure],
         })
+    # add missing columns
+    for col in x.columns:
+       if col not in input_data.columns:
+        input_data[col] = 0
+    # Match Training Columns
+    input_data = input_data[x.columns]
 
 
-    # Add missing columns required by model
-    for col in model4.feature_names_in_:
-        if col not in input_data.columns:
-          input_data[col] = 0
 
-    
+    # Predict probabilities
+    probabilities = model4.predict_proba(input_data)[0]
 
-    input_data = input_data[model4.feature_names_in_]
-
-    
-    st.write(input_data.T)
-
-    probability = model4.predict_proba(input_data)[0]
-
-    prediction = model4.predict(input_data)[0]
-
-
+    # Get class names
     class_names = model4.classes_
-    probability_df = pd.DataFrame([{
-    class_names[i]: round(probability[i] * 100, 2)
-    for i in range(len(class_names))}])
 
-    # Churn Probability
-    predicted_index = list(class_names).index(prediction)
 
-    # KPI Metrics
-    prob_dict = {
-    class_names[i]: round(probability[i] * 100, 2)
-    for i in range(len(class_names))}
+    # Dataframe
+    probability_df = pd.DataFrame({"Risk Level": class_names, "Probability (%)": [round(p*100,2) 
+                                                     for p in probabilities]})
+    
+    # Show Table
+    st.subheader("Customer Risk Probability")
+    st.dataframe(probability_df, use_container_width= True)
 
-    # Results
-    predicted_probability = round(
-    prob_dict[prediction],
-    2)
+    # Visualization
+    fig, ax = plt.subplots(figsize = (7,5))
+    bars = ax.bar(probability_df["Risk Level"], probability_df["Probability (%)"])
 
-    st.subheader("Prediction Result")
+    for bar in bars:
+        height = bar.get_height()
+        ax.text( bar.get_x() + bar.get_width()/2, height + 1, f"{height:.1f}%",
+        ha='center')
 
-    if prediction == "High Risk":
-      st.error(
-      f"⚠️ High Churn Risk ({predicted_probability}%)" )
+    ax.set_ylim(0,100)
+    ax.set_ylabel("Probability (%)")
+    ax.set_title("Customer Risk Prediction")
 
-    elif prediction == "Medium Risk":
-      st.warning(
-       f"⚠️ Medium Churn Risk ({predicted_probability}%)")
+    st.pyplot(fig)  
+
+    highest_risk = probability_df.loc[probability_df["Probability (%)"].idxmax(),
+    "Risk Level"]
+
+    highest_prob = probability_df["Probability (%)"].max()
+
+    if highest_risk == "High Risk":
+        st.error(f"⚠️ {highest_risk} ({highest_prob:.1f}%)")
+
+    elif highest_risk == "Medium Risk":
+        st.warning(f"⚠️ {highest_risk} ({highest_prob:.1f}%)")
 
     else:
-      st.success(
-       f"✅ Low Churn Risk ({predicted_probability}%)")
-
-    st.subheader("Risk Probabilities")
-
-    
-
-    # KPI Metrics
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-      st.metric(
-        "Low Risk %",
-        f"{prob_dict.get('Low Risk', 0)}%")
-
-    with col2:
-     st.metric(
-        "Medium Risk %",
-        f"{prob_dict.get('Medium Risk', 0)}%")
-
-    with col3:
-     st.metric(
-        "High Risk %",
-        f"{prob_dict.get('High Risk', 0)}%")
-     
-    predicted_probability = round(
-    prob_dict[prediction],2)
-
-   
-   
+        st.success(f"✅ {highest_risk} ({highest_prob:.1f}%)")
