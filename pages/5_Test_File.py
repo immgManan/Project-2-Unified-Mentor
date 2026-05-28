@@ -1,26 +1,30 @@
-import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
 import streamlit as st
+import matplotlib.pyplot as plt
 
 # Retrain Model
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
+
+# Page Configuration
+st.set_page_config(page_title = "Customer Churn Risk Calculator", page_icon = "📉",
+                    layout = "wide")
 df = pd.read_csv("dashboard_data.csv")
 def risk_label(row):
 
     score = 0
 
     # Age
-    if row["Age"] > 60:
-        score += 1
+    if row["Age"] > 50:
+        score += 2
 
     # Balance
-    if row["Balance"] > 150000:
-        score += 1
+    if row["Balance"] > 100000:
+        score += 2
 
     # Credit Score
-    if row["CreditScore"] < 450:
+    if row["CreditScore"] < 500:
         score += 2
 
     # Activity
@@ -28,15 +32,15 @@ def risk_label(row):
         score += 1
 
     # Products
-    if row["NumOfProducts"] == 1:
+    if row["NumOfProducts"] <= 1:
         score += 1
 
     # Exited
     if row["Exited"] == 1:
-        score += 2
+        score += 3
 
     # Final Risk Level
-    if score >= 6:
+    if score >= 7:
         return "High Risk"
 
     elif score >= 4:
@@ -46,7 +50,7 @@ def risk_label(row):
         return "Low Risk"
 
 df["Risk Level"] = df.apply(risk_label, axis=1)
-st.write(df["Risk Level"].value_counts())
+
 # Feature Engineering
 df["Balance_to_Salary_ratio"] = (
     df["Balance"] / df["EstimatedSalary"])
@@ -65,7 +69,7 @@ df["Age_tenure_interaction"] = (
 # Features and Target
 x = df.drop(["Risk Level","Exited"], axis=1)
 
-y = df["Risk Level"]
+y = df["Exited"]
 
 # Encoding
 x = pd.get_dummies(x, drop_first=True)
@@ -86,15 +90,18 @@ st.write("Model Accuracy:", accuracy)
 pickle.dump(model4, open("churn_model_Grad_Boost.pkl", "wb"))
 model4 = pickle.load(open("churn_model_Grad_Boost.pkl", "rb"))
 
-# Input Customer Features
-st.subheader("Input Customer Features")
 
+st.title("Customer Churn Risk Calculator")
+
+# Input Section
 col1, col2 = st.columns(2)
+
 with col1:
     credit_score = st.slider("Credit Score", 300,900,650)
     age = st.slider("Age", 18,100,35)
-    balance = st.number_input("Balance", min_value =0, value = 50000)
-    estimated_salary = st.number_input("Estimated Salary", min_value = 0, value = 50000)
+    balance = st.number_input("Balance", min_value = 0.0, value = 50000.0)
+    estimated_salary = st.number_input("Estimated Salary", min_value = 0.0, value = 50000.0)
+
 with col2:
     geography = st.selectbox("Geography", ["France", "Spain", "Germany"])
     gender = st.selectbox("Gender", ["Male","Female"])
@@ -109,9 +116,18 @@ gender = 1 if gender == "Male" else 0
 geo_spain = 1 if geography == "Spain" else 0
 geo_germany = 1 if geography == "Germany" else 0
 
-# Predict Button
-if st.button("Visualize Churn Probability"):
+# Prediction Button
+# Keep prediction state
+if "predict_clicked" not in st.session_state:
+    st.session_state.predict_clicked = False
+
+if st.button("Predict Churn Risk"):
+    st.session_state.predict_clicked = True
+
+if st.session_state.predict_clicked:
+    
     input_data = pd.DataFrame({
+     'Year': [2025],
      'CreditScore': [credit_score],
         'Age': [age],
         'Tenure': [tenure],
@@ -124,57 +140,161 @@ if st.button("Visualize Churn Probability"):
         'Geography_Germany': [geo_germany],
         'Geography_Spain': [geo_spain],
         'Balance_to_Salary_ratio': [balance / estimated_salary if estimated_salary > 0 else 0],
+        'Product_Density_Indicator': [num_of_products / age if age > 0 else num_of_products],
+        'Engagement_product_indicator': [num_of_products*2 + is_active_member + has_cr_card],
         'Age_tenure_interaction': [age * tenure],
         })
-    # add missing columns
-    for col in x.columns:
-       if col not in input_data.columns:
-        input_data[col] = 0
-    # Match Training Columns
-    input_data = input_data[x.columns]
 
 
+    # Add missing columns required by model
+    for col in model4.feature_names_in_:
+        if col not in input_data.columns:
+          input_data[col] = 0
 
-    # Predict probabilities
-    probabilities = model4.predict_proba(input_data)[0]
-
-    # Get class names
-    class_names = model4.classes_
-
-
-    # Dataframe
-    probability_df = pd.DataFrame({"Risk Level": class_names, "Probability (%)": [round(p*100,2) 
-                                                     for p in probabilities]})
     
-    # Show Table
-    st.subheader("Customer Risk Probability")
-    st.dataframe(probability_df, use_container_width= True)
 
-    # Visualization
-    fig, ax = plt.subplots(figsize = (7,5))
-    bars = ax.bar(probability_df["Risk Level"], probability_df["Probability (%)"])
+    input_data = input_data[model4.feature_names_in_]
 
-    for bar in bars:
+    
+    st.write(input_data.T)
+    # Prediction
+    prediction = model4.predict(input_data)[0]
+
+    # Probability
+    probability = model4.predict_proba(input_data)[0]
+
+    retention_probability = round(probability[0]*100, 2)
+    churn_probability = round(probability[1]*100, 2)    
+
+    # Results
+  
+
+    st.subheader("Prediction Result")
+    if prediction == 1:
+       st.error(f"⚠️ Customer Likely to Churn ({churn_probability}%)")
+    else:
+       st.success(f"✅ Customer Likely to Stay ({retention_probability}%)")   
+
+    st.subheader("Risk Probabilities")
+
+    # KPI Metrics
+    col1, col2 = st.columns(2)
+
+    with col1:
+      st.metric("Retention Probability", f"{retention_probability}")
+
+    with col2:
+     st.metric("Churn Probability", f"{churn_probability}")
+
+    # WHAT IF SCENARIO SIMULATOR
+    st.subheader("What-if Scenario Simulator")
+    st.write("Compare Original vs Modified Customer Risk")
+
+    # Original Customer prediction
+    original_input = pd.DataFrame({
+        'CreditScore': [credit_score],
+    'Age': [age],
+    'Tenure': [tenure],
+    'Balance': [balance],
+    'NumOfProducts': [num_of_products],
+    'HasCrCard': [has_cr_card],
+    'IsActiveMember': [is_active_member],
+    'EstimatedSalary': [estimated_salary],
+    'Balance_to_Salary_ratio' : [balance/estimated_salary if estimated_salary > 0 else 0],
+    'Age_tenure_interaction' : [age*tenure]
+    })
+
+    # Match Columns
+    for col in x.columns:
+        if col not in original_input.columns:
+            original_input[col]=0
+    original_input = original_input[x.columns]
+
+    # Original Prediction
+    original_prob = model4.predict_proba(original_input)[0][1]*100
+
+    # Form Start
+    with st.form("what-if-form"):
+
+      # Modified Scenario
+      st.markdown("Modify Customer Scenario")
+
+      col3, col4 = st.columns(2)
+      with col3:
+        new_balance = st.slider("New Balance", 0,250000,int(balance))
+        new_products = st.slider("New Number Of Products", 0,4,int(num_of_products))
+
+      with col4:
+        new_active = st.selectbox("New Active Status", [0,1])
+        new_credit_score = st.slider("New Credit Score", 300,900, int(credit_score))
+      
+      # keep simulator state
+      if "run_simulation" not in st.session_state:
+        st.session_state.run_simulation = False
+
+      simulate_button = st.form_submit_button("Run What-If-Simulation")
+
+      if simulate_button:
+        st.session_state.run_simulation = True
+
+    # Run only after button click
+    if st.session_state.run_simulation:  
+      # Modified Customer Data
+      modified_input = pd.DataFrame({'CreditScore': [new_credit_score],
+      'Age': [age],
+      'Tenure': [tenure],
+      'Balance': [new_balance],
+      'NumOfProducts': [new_products],
+      'HasCrCard': [has_cr_card],
+      'IsActiveMember': [new_active],
+      'EstimatedSalary': [estimated_salary],
+      'Balance_to_Salary_ratio' : [balance/estimated_salary],
+      'Age_tenure_interaction' : [age*tenure]
+      })
+
+      for col in x.columns:
+        if col not in modified_input.columns:
+            modified_input[col] = 0
+
+      modified_input = modified_input[x.columns]
+
+      modified_prob = model4.predict_proba(modified_input)[0][1] * 100
+
+      # Comparison Table
+      comparison_df = pd.DataFrame({"Scenario":["Original Customer", "Modified Customer"],
+                                  "Churn Probability (%)": [round(original_prob,2), 
+                                                            round(modified_prob,2)]})
+    
+      st.subheader("Scenario Comparison")
+
+      st.dataframe(comparison_df, use_container_width=True)
+
+      # Visualization
+      fig2, ax2 = plt.subplots(figsize = (7,5))
+
+      bars = ax2.bar(comparison_df["Scenario"], comparison_df["Churn Probability (%)"])
+
+      for bar in bars:
         height = bar.get_height()
-        ax.text( bar.get_x() + bar.get_width()/2, height + 1, f"{height:.1f}%",
+        ax2.text(
+        bar.get_x() + bar.get_width()/2,
+        height + 1,
+        f"{height:.1f}%",
         ha='center')
 
-    ax.set_ylim(0,100)
-    ax.set_ylabel("Probability (%)")
-    ax.set_title("Customer Risk Prediction")
+      ax2.set_ylim(0,100)
 
-    st.pyplot(fig)  
+      ax2.set_ylabel("Churn Probability (%)")
+      ax2.set_title("What-if Scenario Comparison")
+      st.pyplot(fig2)
 
-    highest_risk = probability_df.loc[probability_df["Probability (%)"].idxmax(),
-    "Risk Level"]
+      # Final Insight
+      difference = round(original_prob - modified_prob,2)
 
-    highest_prob = probability_df["Probability (%)"].max()
+      if modified_prob < original_prob:
+        st.success(f"✅ Risk Reduced by {difference}%")
 
-    if highest_risk == "High Risk":
-        st.error(f"⚠️ {highest_risk} ({highest_prob:.1f}%)")
-
-    elif highest_risk == "Medium Risk":
-        st.warning(f"⚠️ {highest_risk} ({highest_prob:.1f}%)")
-
-    else:
-        st.success(f"✅ {highest_risk} ({highest_prob:.1f}%)")
+      elif modified_prob > original_prob:
+        st.error(f"⚠️ Risk Increased by {abs(difference)}%")
+      else:
+        st.info("No Change In Risk")
