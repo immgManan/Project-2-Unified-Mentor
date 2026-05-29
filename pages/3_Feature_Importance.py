@@ -109,3 +109,38 @@ ax.set_ylabel("Features")
 
 ax.set_title("Feature Importance")
 st.pyplot(fig)
+
+
+# SHAP value analysis
+import shap
+import numpy as np
+
+st.subheader("SHAP Value Analysis")
+
+# Create SHAP explainer
+explainer = shap.TreeExplainer(model4)
+
+sample_x = x_test.sample(100, random_state=42)
+
+shap_values = explainer.shap_values(sample_x)
+
+# SHAP detailed impact plot
+st.subheader("SHAP Feature Impact Distribution")
+
+fig2, ax2 = plt.subplots(figsize=(10,6))
+
+shap.summary_plot(shap_values, sample_x, show= False)
+st.pyplot(fig2)
+
+# Top SHAP features Table
+st.subheader("Top SHAP Features")
+
+shap_importance = np.abs(shap_values).mean(axis=0)
+
+shap_df = pd.DataFrame({"Feature": sample_x.columns, "SHAP Importance": shap_importance})
+
+# sort
+shap_df = shap_df.sort_values(by = "SHAP Importance", ascending = False)
+
+# Display
+st.dataframe(shap_df, use_container_width=True)
