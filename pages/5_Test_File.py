@@ -116,34 +116,65 @@ gender = 1 if gender == "Male" else 0
 geo_spain = 1 if geography == "Spain" else 0
 geo_germany = 1 if geography == "Germany" else 0
 
-# Prediction Button
+
+# Initialize Session State Variables
+if "original_prob" not in st.session_state:
+    st.session_state.original_prob = None
 # Keep prediction state
 if "predict_clicked" not in st.session_state:
     st.session_state.predict_clicked = False
 
 if st.button("Predict Churn Risk"):
+
     st.session_state.predict_clicked = True
 
+    st.session_state.original_prob = None
+
+     # reset stored prediction
+    if "prediction" in st.session_state:
+        del st.session_state.prediction
+
+    if "retention_probability" in st.session_state:
+        del st.session_state.retention_probability
+
+    if "churn_probability" in st.session_state:
+        del st.session_state.churn_probability
+
+     # Save original customer inputs
+    st.session_state.original_customer = {
+        "credit_score": credit_score,
+        "age": age,
+        "tenure": tenure,
+        "balance": balance,
+        "num_of_products": num_of_products,
+        "has_cr_card": has_cr_card,
+        "is_active_member": is_active_member,
+        "estimated_salary": estimated_salary,
+        "gender": gender,
+        "geo_spain": geo_spain,
+        "geo_germany": geo_germany}
+    
 if st.session_state.predict_clicked:
+    customer = st.session_state.original_customer
+       
     
     input_data = pd.DataFrame({
-     'Year': [2025],
-     'CreditScore': [credit_score],
-        'Age': [age],
-        'Tenure': [tenure],
-        'Balance': [balance],
-        'NumOfProducts': [num_of_products],
-        'HasCrCard': [has_cr_card],
-        'IsActiveMember': [is_active_member],
-        'EstimatedSalary': [estimated_salary],
-        'Gender': [gender],
-        'Geography_Germany': [geo_germany],
-        'Geography_Spain': [geo_spain],
-        'Balance_to_Salary_ratio': [balance / estimated_salary if estimated_salary > 0 else 0],
-        'Product_Density_Indicator': [num_of_products / age if age > 0 else num_of_products],
-        'Engagement_product_indicator': [num_of_products*2 + is_active_member + has_cr_card],
-        'Age_tenure_interaction': [age * tenure],
-        })
+    'CreditScore': [customer["credit_score"]],
+    'Age': [customer["age"]],
+    'Tenure': [customer["tenure"]],
+    'Balance': [customer["balance"]],
+    'NumOfProducts': [customer["num_of_products"]],
+    'HasCrCard': [customer["has_cr_card"]],
+    'IsActiveMember': [customer["is_active_member"]],
+    'EstimatedSalary': [customer["estimated_salary"]],
+    'Balance_to_Salary_ratio': [customer["balance"] / customer["estimated_salary"]
+        if customer["estimated_salary"] > 0 else 0],
+    'Product_Density_Indicator': [customer["num_of_products"] / customer["age"]
+        if customer["age"] > 0 else customer["num_of_products"]],
+    'Engagement_product_indicator': [customer["num_of_products"] * 2 + customer["is_active_member"]
+     + customer["has_cr_card"]],
+    'Age_tenure_interaction': [customer["age"] * customer["tenure"]]})
+        
 
 
     # Add missing columns required by model
@@ -151,20 +182,32 @@ if st.session_state.predict_clicked:
         if col not in input_data.columns:
           input_data[col] = 0
 
-    
-
     input_data = input_data[model4.feature_names_in_]
 
-    
+    st.session_state.input_data = input_data.copy()
+
+    # Frozen prediction
+    if "prediction" not in st.session_state:
+
+     frozen_prediction = model4.predict(input_data)[0]
+
+     frozen_probability = model4.predict_proba(input_data)[0]
+
+     st.session_state.prediction = frozen_prediction
+
+     st.session_state.retention_probability = round(
+        frozen_probability[0] * 100, 2)
+
+     st.session_state.churn_probability = round(
+        frozen_probability[1] * 100, 2)
+
     st.write(input_data.T)
-    # Prediction
-    prediction = model4.predict(input_data)[0]
+    # Use frozen prediction values
+    prediction = st.session_state.prediction
 
-    # Probability
-    probability = model4.predict_proba(input_data)[0]
+    retention_probability = st.session_state.retention_probability
 
-    retention_probability = round(probability[0]*100, 2)
-    churn_probability = round(probability[1]*100, 2)    
+    churn_probability = st.session_state.churn_probability   
 
     # Results
   
@@ -190,28 +233,11 @@ if st.session_state.predict_clicked:
     st.subheader("What-if Scenario Simulator")
     st.write("Compare Original vs Modified Customer Risk")
 
-    # Original Customer prediction
-    original_input = pd.DataFrame({
-        'CreditScore': [credit_score],
-    'Age': [age],
-    'Tenure': [tenure],
-    'Balance': [balance],
-    'NumOfProducts': [num_of_products],
-    'HasCrCard': [has_cr_card],
-    'IsActiveMember': [is_active_member],
-    'EstimatedSalary': [estimated_salary],
-    'Balance_to_Salary_ratio' : [balance/estimated_salary if estimated_salary > 0 else 0],
-    'Age_tenure_interaction' : [age*tenure]
-    })
-
-    # Match Columns
-    for col in x.columns:
-        if col not in original_input.columns:
-            original_input[col]=0
-    original_input = original_input[x.columns]
-
     # Original Prediction
-    original_prob = model4.predict_proba(original_input)[0][1]*100
+    if st.session_state.original_prob is None:
+     st.session_state.original_prob = churn_probability
+
+    original_prob = st.session_state.original_prob
 
     # Form Start
     with st.form("what-if-form"):
@@ -221,35 +247,32 @@ if st.session_state.predict_clicked:
 
       col3, col4 = st.columns(2)
       with col3:
-        new_balance = st.slider("New Balance", 0,250000,int(balance))
-        new_products = st.slider("New Number Of Products", 0,4,int(num_of_products))
+        new_balance = st.slider("New Balance", 0,250000,int(customer["balance"]), key = "what-if balance")
+        new_products = st.slider("New Number Of Products", 0,4,int(customer["num_of_products"]), key
+                                 = "what-if products")
 
       with col4:
-        new_active = st.selectbox("New Active Status", [0,1])
-        new_credit_score = st.slider("New Credit Score", 300,900, int(credit_score))
+        new_active = st.selectbox("New Active Status", [0,1], index = customer["is_active_member"], key =
+                                  "what-if_active")
+        new_credit_score = st.slider("New Credit Score", 300,900, int(customer["credit_score"]), key = 
+                                     "whatif_credit")
       
-      # keep simulator state
-      if "run_simulation" not in st.session_state:
-        st.session_state.run_simulation = False
+      simulate_button = st.form_submit_button("Run What-If Simulation")
 
-      simulate_button = st.form_submit_button("Run What-If-Simulation")
-
-      if simulate_button:
-        st.session_state.run_simulation = True
-
-    # Run only after button click
-    if st.session_state.run_simulation:  
+    if simulate_button: 
       # Modified Customer Data
       modified_input = pd.DataFrame({'CreditScore': [new_credit_score],
-      'Age': [age],
-      'Tenure': [tenure],
+      'Age': [customer["age"]],
+      'Tenure': [customer["tenure"]],
       'Balance': [new_balance],
       'NumOfProducts': [new_products],
-      'HasCrCard': [has_cr_card],
+      'HasCrCard': [customer["has_cr_card"]],
       'IsActiveMember': [new_active],
-      'EstimatedSalary': [estimated_salary],
-      'Balance_to_Salary_ratio' : [balance/estimated_salary],
-      'Age_tenure_interaction' : [age*tenure]
+      'EstimatedSalary': [customer["estimated_salary"]],
+      'Balance_to_Salary_ratio' : [new_balance/customer["estimated_salary"]],
+      'Age_tenure_interaction' : [customer["age"]*customer["tenure"]],
+      'Product_Density_Indicator': [new_products / customer["age"] if age > 0 else new_products],
+      'Engagement_product_indicator': [new_products*2 + new_active + customer["has_cr_card"]],
       })
 
       for col in x.columns:
