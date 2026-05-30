@@ -24,7 +24,7 @@ st.divider()
 # About Project
 st.subheader("Project Overview")
 st.write("""This project includes:
-         - Data preprocessing and feature engineering
+         - Data preprocessing and feature engineering 
          - Machine learning model development and evaluation""")
 
 # Sidebar
